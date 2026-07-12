@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ffe3c2">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>订单 - 家庭点餐</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="hero" style="border-radius:0 0 20px 20px; padding:18px 20px 22px;">
+  <div class="hero-title"><span>订单 📋</span></div>
+</div>
+<div class="content">
+  <div id="content"><div class="empty-tip">加载中...</div></div>
+</div>
+
+<div class="tabbar">
+  <a href="index.html"><span class="tab-icon">🍚</span>点餐</a>
+  <a href="orders.html" class="active"><span class="tab-icon">📋</span>订单</a>
+  <a href="admin.html"><span class="tab-icon">🧑‍🍳</span>菜品管理</a>
+</div>
+
+<script src="common.js"></script>
+<script>
+async function load() {
+  const res = await fetch('/api/orders');
+  const data = await res.json();
+  render(data.orders);
+}
+
+function render(orders) {
+  const content = document.getElementById('content');
+  if (orders.length === 0) {
+    content.innerHTML = '<div class="empty-tip">还没有人下单</div>';
+    return;
+  }
+  content.innerHTML = orders.map((o) => `
+    <div class="card order-card ${o.status === 'done' ? 'done' : ''}">
+      <div class="order-header">
+        <span class="order-time">${formatTime(o.created_at)}</span>
+      </div>
+      <div class="order-items">
+        ${o.items.map((it) => `<span class="order-item">${it.name} x${it.qty}</span>`).join('')}
+      </div>
+      ${o.note ? `<div class="order-note">备注：${o.note}</div>` : ''}
+      <div class="order-footer">
+        <span class="order-status">${o.status === 'done' ? '已完成' : '待处理'}</span>
+        <button class="btn ${o.status === 'done' ? 'btn-secondary' : 'btn-primary'}" onclick="toggleStatus(${o.id}, '${o.status}')">
+          ${o.status === 'done' ? '标记为待处理' : '标记完成'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function toggleStatus(id, status) {
+  const newStatus = status === 'done' ? 'pending' : 'done';
+  await fetch(`/api/orders/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus })
+  });
+  load();
+}
+
+load();
+</script>
+</body>
+</html>

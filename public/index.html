@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="家庭点餐">
+<meta name="theme-color" content="#ffe3c2">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-180.png">
+<title>家庭点餐</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="hero">
+  <div class="hero-decor"><span>🌿</span><span>🪴</span></div>
+  <div class="hero-bowl">🍲</div>
+  <div class="hero-title"><span>今天吃什么呀 💕</span></div>
+</div>
+
+<div class="page-body">
+  <nav class="cat-sidebar" id="catSidebar"></nav>
+  <main class="dish-grid" id="dishGrid">
+    <div class="empty-tip">加载中...</div>
+  </main>
+</div>
+
+<div class="content" style="padding-top:0;">
+  <textarea class="note-input" id="noteInput" placeholder="备注一下，比如「不要辣」" rows="2"></textarea>
+</div>
+
+<div class="cart-bar" id="cartBar" style="display:none;">
+  <span id="cartSummary"></span>
+  <button class="btn btn-primary" id="submitBtn">立即下单</button>
+</div>
+
+<div class="tabbar">
+  <a href="index.html" class="active"><span class="tab-icon">🍚</span>点餐</a>
+  <a href="orders.html"><span class="tab-icon">📋</span>订单</a>
+  <a href="admin.html"><span class="tab-icon">🧑‍🍳</span>菜品管理</a>
+</div>
+
+<script>
+let categories = [];
+let dishes = [];
+let activeCategory = '';
+let note = '';
+
+async function load() {
+  const [catRes, dishRes] = await Promise.all([
+    fetch('/api/categories').then((r) => r.json()),
+    fetch('/api/dishes').then((r) => r.json())
+  ]);
+  categories = catRes.categories;
+  dishes = dishRes.dishes.map((d) => ({ ...d, qty: 0 }));
+
+  const firstWithDishes = categories.find((c) => dishes.some((d) => d.category === c.key));
+  activeCategory = (firstWithDishes || categories[0]).key;
+
+  renderSidebar();
+  renderGrid();
+}
+
+function renderSidebar() {
+  const sidebar = document.getElementById('catSidebar');
+  sidebar.innerHTML = categories.map((c) => `
+    <button class="cat-btn ${c.key === activeCategory ? 'active' : ''}" onclick="selectCategory('${c.key}')">
+      <span class="emoji">${c.emoji}</span>
+      <span>${c.key}</span>
+    </button>
+  `).join('');
+}
+
+function selectCategory(key) {
+  activeCategory = key;
+  renderSidebar();
+  renderGrid();
+}
+
+function renderGrid() {
+  const grid = document.getElementById('dishGrid');
+  const list = dishes.filter((d) => d.category === activeCategory);
+  const cat = categories.find((c) => c.key === activeCategory);
+
+  if (list.length === 0) {
+    grid.innerHTML = '<div class="empty-tip">这个分类还没有菜，去「菜品管理」加几道吧～</div>';
+    return;
+  }
+
+  grid.innerHTML = list.map((d) => `
+    <div class="dish-card">
+      ${d.image
+        ? `<img class="dish-photo" src="${d.image}" alt="${d.name}">`
+        : `<div class="dish-photo-placeholder">${cat ? cat.emoji : '🍽️'}</div>`}
+      <div class="dish-info">
+        <div class="dish-name">${d.name}</div>
+        <div class="dish-desc">${d.desc || ''}</div>
+        <div class="dish-stepper-row">
+          ${d.qty > 0 ? `
+            <button class="round-btn minus" onclick="changeQty(${d.id}, -1)">-</button>
+            <span class="stepper-num">${d.qty}</span>
+          ` : ''}
+          <button class="round-btn" onclick="changeQty(${d.id}, 1)">+</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function changeQty(id, delta) {
+  const dish = dishes.find((d) => d.id === id);
+  dish.qty = Math.max(0, dish.qty + delta);
+  renderGrid();
+  updateCartBar();
+}
+
+function updateCartBar() {
+  const total = dishes.reduce((sum, d) => sum + d.qty, 0);
+  const cartBar = document.getElementById('cartBar');
+  if (total > 0) {
+    cartBar.style.display = 'flex';
+    document.getElementById('cartSummary').textContent = `已选 ${total} 个菜`;
+  } else {
+    cartBar.style.display = 'none';
+  }
+}
+
+document.getElementById('noteInput').addEventListener('input', (e) => { note = e.target.value; });
+
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  const items = dishes.filter((d) => d.qty > 0).map((d) => ({ dishId: d.id, name: d.name, qty: d.qty }));
+  if (items.length === 0) return;
+  const res = await fetch('/api/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items, note })
+  });
+  const data = await res.json();
+  if (!data.success) {
+    alert(data.error || '提交失败');
+    return;
+  }
+  alert('下单成功！');
+  note = '';
+  document.getElementById('noteInput').value = '';
+  dishes.forEach((d) => { d.qty = 0; });
+  renderGrid();
+  updateCartBar();
+});
+
+load();
+</script>
+</body>
+</html>
