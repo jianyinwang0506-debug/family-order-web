@@ -8,6 +8,8 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@replit/database": "^3.0.1",
+    "@replit/object-storage": "^1.0.0",
     "express": "^4.19.2",
     "multer": "^2.0.0"
   }

@@ -1,34 +1,58 @@
 const path = require('path');
 const fs = require('fs');
 
+const onReplit = !!process.env.REPL_ID;
+
 const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+if (!onReplit && !fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 
 const dishesFile = path.join(dataDir, 'dishes.json');
 const ordersFile = path.join(dataDir, 'orders.json');
 
-function readJSON(file) {
+let replitDbClient = null;
+function getReplitDb() {
+  if (!replitDbClient) {
+    const Client = require('@replit/database');
+    replitDbClient = new Client();
+  }
+  return replitDbClient;
+}
+
+async function loadCollection(replitKey, file) {
+  if (onReplit) {
+    const res = await getReplitDb().get(replitKey);
+    return res.ok && res.value ? res.value : [];
+  }
   if (!fs.existsSync(file)) return [];
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+async function saveCollection(replitKey, file, rows) {
+  if (onReplit) {
+    await getReplitDb().set(replitKey, rows);
+    return;
+  }
+  fs.writeFileSync(file, JSON.stringify(rows, null, 2));
 }
+
+const loadDishes = () => loadCollection('dishes', dishesFile);
+const saveDishes = (rows) => saveCollection('dishes', dishesFile, rows);
+const loadOrders = () => loadCollection('orders', ordersFile);
+const saveOrders = (rows) => saveCollection('orders', ordersFile, rows);
 
 function nextId(rows) {
   return rows.reduce((max, r) => Math.max(max, r.id), 0) + 1;
 }
 
 module.exports = {
-  getDishes(includeUnavailable) {
-    const dishes = readJSON(dishesFile);
+  async getDishes(includeUnavailable) {
+    const dishes = await loadDishes();
     const filtered = includeUnavailable ? dishes : dishes.filter((d) => d.available);
     return filtered.sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
 
-  saveDish({ id, name, category, desc, image }) {
-    const dishes = readJSON(dishesFile);
+  async saveDish({ id, name, category, desc, image }) {
+    const dishes = await loadDishes();
     if (id) {
       const dish = dishes.find((d) => d.id === Number(id));
       if (dish) {
@@ -37,7 +61,7 @@ module.exports = {
         dish.desc = desc || '';
         if (image) dish.image = image;
       }
-      writeJSON(dishesFile, dishes);
+      await saveDishes(dishes);
       return id;
     }
     const newDish = {
@@ -50,19 +74,19 @@ module.exports = {
       created_at: new Date().toISOString()
     };
     dishes.push(newDish);
-    writeJSON(dishesFile, dishes);
+    await saveDishes(dishes);
     return newDish.id;
   },
 
-  deleteDish(id) {
-    const dishes = readJSON(dishesFile);
+  async deleteDish(id) {
+    const dishes = await loadDishes();
     const dish = dishes.find((d) => d.id === Number(id));
     if (dish) dish.available = false;
-    writeJSON(dishesFile, dishes);
+    await saveDishes(dishes);
   },
 
-  seedDishes(sampleDishes) {
-    const dishes = readJSON(dishesFile);
+  async seedDishes(sampleDishes) {
+    const dishes = await loadDishes();
     if (dishes.length > 0) return 0;
     sampleDishes.forEach((d) => {
       dishes.push({
@@ -75,17 +99,17 @@ module.exports = {
         created_at: new Date().toISOString()
       });
     });
-    writeJSON(dishesFile, dishes);
+    await saveDishes(dishes);
     return sampleDishes.length;
   },
 
-  getOrders() {
-    const orders = readJSON(ordersFile);
+  async getOrders() {
+    const orders = await loadOrders();
     return orders.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
   },
 
-  createOrder({ items, note }) {
-    const orders = readJSON(ordersFile);
+  async createOrder({ items, note }) {
+    const orders = await loadOrders();
     const newOrder = {
       id: nextId(orders),
       items,
@@ -94,14 +118,14 @@ module.exports = {
       created_at: new Date().toISOString()
     };
     orders.push(newOrder);
-    writeJSON(ordersFile, orders);
+    await saveOrders(orders);
     return newOrder.id;
   },
 
-  updateOrderStatus(id, status) {
-    const orders = readJSON(ordersFile);
+  async updateOrderStatus(id, status) {
+    const orders = await loadOrders();
     const order = orders.find((o) => o.id === Number(id));
     if (order) order.status = status;
-    writeJSON(ordersFile, orders);
+    await saveOrders(orders);
   }
 };
